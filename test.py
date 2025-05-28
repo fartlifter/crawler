@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 from datetime import datetime, date, time as dtime
 import re
 import time as t
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 st.set_page_config(page_title="뉴스 키워드 수집기", layout="wide")
 
@@ -47,8 +47,11 @@ start_dt = datetime.combine(start_date, start_time)
 end_dt = datetime.combine(end_date, end_time)
 selected_keywords = [kw for g in selected_groups for kw in keyword_groups[g]]
 
+progress_placeholder = st.empty()
+status_placeholder = st.empty()
+
 if st.button("📥 기사 수집 시작"):
-    st.info("기사 수집을 시작합니다...")
+    status_placeholder.info("기사 수집을 시작합니다...")
 
     def highlight_keywords(text, keywords):
         for kw in keywords:
@@ -75,9 +78,11 @@ if st.button("📥 기사 수집 시작"):
 
     def fetch_articles_concurrently(article_list, fetch_func):
         results = []
+        progress_bar = progress_placeholder.progress(0.0, text="본문 수집 중...")
+        total = len(article_list)
         with ThreadPoolExecutor(max_workers=10) as executor:
             future_to_article = {executor.submit(fetch_func, art['url']): art for art in article_list}
-            for future in future_to_article:
+            for i, future in enumerate(as_completed(future_to_article)):
                 art = future_to_article[future]
                 try:
                     content = future.result()
@@ -86,11 +91,13 @@ if st.button("📥 기사 수집 시작"):
                         results.append(art)
                 except:
                     continue
+                progress_bar.progress((i + 1) / total, text=f"{i+1}/{total} 기사 처리 완료")
+        progress_placeholder.empty()
         return results
 
     def parse_newsis():
         collected, page = [], 1
-        st.write("🔍 [뉴시스] 수집 시작")
+        status_placeholder.info("🔍 [뉴시스] 목록 수집 중...")
         while True:
             url = f"https://www.newsis.com/realnews/?cid=realnews&day=today&page={page}"
             res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -112,7 +119,7 @@ if st.button("📥 기사 수집 시작"):
                     continue
                 dt = datetime.strptime(match.group(), "%Y.%m.%d %H:%M:%S")
                 if dt < start_dt:
-                    return collected
+                    return fetch_articles_concurrently(collected, get_newsis_content)
                 if start_dt <= dt <= end_dt:
                     collected.append({"source": "뉴시스", "datetime": dt, "title": title, "url": "https://www.newsis.com" + href})
             page += 1
@@ -121,7 +128,7 @@ if st.button("📥 기사 수집 시작"):
 
     def parse_yonhap():
         collected, page = [], 1
-        st.write("🔍 [연합뉴스] 수집 시작")
+        status_placeholder.info("🔍 [연합뉴스] 목록 수집 중...")
         while True:
             url = f"https://www.yna.co.kr/news/{page}?site=navi_latest_depth01"
             res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -141,7 +148,7 @@ if st.button("📥 기사 수집 시작"):
                 except:
                     continue
                 if dt < start_dt:
-                    return collected
+                    return fetch_articles_concurrently(collected, get_yonhap_content)
                 if start_dt <= dt <= end_dt:
                     collected.append({"source": "연합뉴스", "datetime": dt, "title": title_tag.text.strip(), "url": f"https://www.yna.co.kr/view/{cid}"})
             page += 1
@@ -152,7 +159,7 @@ if st.button("📥 기사 수집 시작"):
     yonhap_articles = parse_yonhap()
     articles = newsis_articles + yonhap_articles
 
-    st.success(f"✅ 총 {len(articles)}건의 기사를 수집했습니다.")
+    status_placeholder.success(f"✅ 총 {len(articles)}건의 기사를 수집했습니다.")
 
     if articles:
         st.subheader("📰 기사 내용")
