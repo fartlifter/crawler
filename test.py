@@ -152,7 +152,6 @@ if st.button("📥 기사 수집 시작"):
             t.sleep(0.8)
         return results
 
-    # 실행
     newsis_articles = parse_newsis()
     yonhap_articles = parse_yonhap()
     articles = newsis_articles + yonhap_articles
@@ -160,19 +159,17 @@ if st.button("📥 기사 수집 시작"):
     st.success(f"✅ 총 {len(articles)}건의 기사를 수집했습니다.")
 
     if articles:
-        # ① 기사 상세 표시
         st.subheader("📰 기사 내용")
         for art in articles:
-            st.markdown(f"**[{art['source']}] {art['datetime']} - [{art['title']}]({art['url']})**")
-            st.markdown(highlight_keywords(art['content'], selected_keywords))
+            matched_kw = [kw for kw in selected_keywords if kw in art["content"]]
+            st.markdown(f"**[{art['title']}]({art['url']})**")
+            st.markdown(f"{art['datetime'].strftime('%Y-%m-%d %H:%M')} | 필터링 키워드: {', '.join(matched_kw)}")
+            st.markdown(highlight_keywords(art['content'], matched_kw).replace("\n", "\n\n"))
             st.markdown("---")
 
-        # ② 복사용 텍스트
         st.subheader("📋 복사용 요약 텍스트")
         text_block = ""
         for art in articles:
             matched_kw = [kw for kw in selected_keywords if kw in art["content"]]
-            text_block += f"△{art['source']}/{art['title']}\n"
-            text_block += f"({art['datetime'].strftime('%Y-%m-%d %H:%M')})\n"
-            text_block += f"[키워드: {', '.join(matched_kw)}]\n\n"
+            text_block += f"△{art['title']}\n-" + art["content"].replace("\n", " ").strip()[:300] + "\n\n"
         st.text_area("복사하세요", text_block, height=300)
