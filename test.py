@@ -4,10 +4,10 @@ from bs4 import BeautifulSoup
 from datetime import datetime, date, time as dtime
 import re
 import time as t
+from concurrent.futures import ThreadPoolExecutor
 
 st.set_page_config(page_title="뉴스 키워드 수집기", layout="wide")
 
-# ✅ 키워드 그룹
 keyword_groups = {
     '시경': ['서울경찰청'],
     '본청': ['경찰청'],
@@ -32,7 +32,6 @@ keyword_groups = {
     ]
 }
 
-# ✅ 사용자 입력
 st.title("📰 뉴스 크롤러 (연합뉴스 + 뉴시스)")
 col1, col2 = st.columns(2)
 with col1:
@@ -58,7 +57,7 @@ if st.button("📥 기사 수집 시작"):
 
     def get_newsis_content(url):
         try:
-            res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
+            res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
             soup = BeautifulSoup(res.text, "html.parser")
             content = soup.find("div", class_="viewer")
             return content.get_text(separator="\n", strip=True) if content else ""
@@ -67,15 +66,30 @@ if st.button("📥 기사 수집 시작"):
 
     def get_yonhap_content(url):
         try:
-            res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
+            res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
             soup = BeautifulSoup(res.text, "html.parser")
             content = soup.find("div", class_="story-news article")
             return content.get_text(separator="\n", strip=True) if content else ""
         except:
             return ""
 
+    def fetch_articles_concurrently(article_list, fetch_func):
+        results = []
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            future_to_article = {executor.submit(fetch_func, art['url']): art for art in article_list}
+            for future in future_to_article:
+                art = future_to_article[future]
+                try:
+                    content = future.result()
+                    if any(kw in content for kw in selected_keywords):
+                        art['content'] = content
+                        results.append(art)
+                except:
+                    continue
+        return results
+
     def parse_newsis():
-        results, page = [], 1
+        collected, page = [], 1
         st.write("🔍 [뉴시스] 수집 시작")
         while True:
             url = f"https://www.newsis.com/realnews/?cid=realnews&day=today&page={page}"
@@ -93,29 +107,20 @@ if st.button("📥 기사 수집 시작"):
                 href = title_tag.get("href", "")
                 if not href.startswith("/view/"):
                     continue
-                url_full = "https://www.newsis.com" + href
                 match = re.search(r"\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}", time_tag.text)
                 if not match:
                     continue
                 dt = datetime.strptime(match.group(), "%Y.%m.%d %H:%M:%S")
                 if dt < start_dt:
-                    return results
+                    return collected
                 if start_dt <= dt <= end_dt:
-                    content = get_newsis_content(url_full)
-                    if any(kw in content for kw in selected_keywords):
-                        results.append({
-                            "source": "뉴시스",
-                            "datetime": dt,
-                            "title": title,
-                            "url": url_full,
-                            "content": content
-                        })
+                    collected.append({"source": "뉴시스", "datetime": dt, "title": title, "url": "https://www.newsis.com" + href})
             page += 1
-            t.sleep(0.8)
-        return results
+            t.sleep(0.3)
+        return fetch_articles_concurrently(collected, get_newsis_content)
 
     def parse_yonhap():
-        results, page = [], 1
+        collected, page = [], 1
         st.write("🔍 [연합뉴스] 수집 시작")
         while True:
             url = f"https://www.yna.co.kr/news/{page}?site=navi_latest_depth01"
@@ -136,21 +141,12 @@ if st.button("📥 기사 수집 시작"):
                 except:
                     continue
                 if dt < start_dt:
-                    return results
+                    return collected
                 if start_dt <= dt <= end_dt:
-                    url_full = f"https://www.yna.co.kr/view/{cid}"
-                    content = get_yonhap_content(url_full)
-                    if any(kw in content for kw in selected_keywords):
-                        results.append({
-                            "source": "연합뉴스",
-                            "datetime": dt,
-                            "title": title_tag.text.strip(),
-                            "url": url_full,
-                            "content": content
-                        })
+                    collected.append({"source": "연합뉴스", "datetime": dt, "title": title_tag.text.strip(), "url": f"https://www.yna.co.kr/view/{cid}"})
             page += 1
-            t.sleep(0.8)
-        return results
+            t.sleep(0.3)
+        return fetch_articles_concurrently(collected, get_yonhap_content)
 
     newsis_articles = parse_newsis()
     yonhap_articles = parse_yonhap()
@@ -170,6 +166,5 @@ if st.button("📥 기사 수집 시작"):
         st.subheader("📋 복사용 요약 텍스트")
         text_block = ""
         for art in articles:
-            matched_kw = [kw for kw in selected_keywords if kw in art["content"]]
             text_block += f"△{art['title']}\n-" + art["content"].replace("\n", " ").strip()[:300] + "\n\n"
         st.text_area("복사하세요", text_block, height=300)
