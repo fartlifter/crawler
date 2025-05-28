@@ -1,9 +1,8 @@
 import streamlit as st
-import requests
+import httpx
 from bs4 import BeautifulSoup
 from datetime import datetime, date, time as dtime
 import re
-import time as t
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 st.set_page_config(page_title="뉴스 키워드 수집기", layout="wide")
@@ -60,19 +59,21 @@ if st.button("📥 기사 수집 시작"):
 
     def get_newsis_content(url):
         try:
-            res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
-            soup = BeautifulSoup(res.text, "html.parser")
-            content = soup.find("div", class_="viewer")
-            return content.get_text(separator="\n", strip=True) if content else ""
+            with httpx.Client(timeout=5.0) as client:
+                res = client.get(url, headers={"User-Agent": "Mozilla/5.0"})
+                soup = BeautifulSoup(res.text, "html.parser")
+                content = soup.find("div", class_="viewer")
+                return content.get_text(separator="\n", strip=True) if content else ""
         except:
             return ""
 
     def get_yonhap_content(url):
         try:
-            res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
-            soup = BeautifulSoup(res.text, "html.parser")
-            content = soup.find("div", class_="story-news article")
-            return content.get_text(separator="\n", strip=True) if content else ""
+            with httpx.Client(timeout=5.0) as client:
+                res = client.get(url, headers={"User-Agent": "Mozilla/5.0"})
+                soup = BeautifulSoup(res.text, "html.parser")
+                content = soup.find("div", class_="story-news article")
+                return content.get_text(separator="\n", strip=True) if content else ""
         except:
             return ""
 
@@ -80,7 +81,7 @@ if st.button("📥 기사 수집 시작"):
         results = []
         progress_bar = progress_placeholder.progress(0.0, text="본문 수집 중...")
         total = len(article_list)
-        with ThreadPoolExecutor(max_workers=10) as executor:
+        with ThreadPoolExecutor(max_workers=30) as executor:
             future_to_article = {executor.submit(fetch_func, art['url']): art for art in article_list}
             for i, future in enumerate(as_completed(future_to_article)):
                 art = future_to_article[future]
@@ -100,7 +101,7 @@ if st.button("📥 기사 수집 시작"):
         status_placeholder.info("🔍 [뉴시스] 목록 수집 중...")
         while True:
             url = f"https://www.newsis.com/realnews/?cid=realnews&day=today&page={page}"
-            res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
+            res = httpx.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5.0)
             soup = BeautifulSoup(res.text, "html.parser")
             items = soup.select("ul.articleList2 > li")
             if not items:
@@ -123,7 +124,6 @@ if st.button("📥 기사 수집 시작"):
                 if start_dt <= dt <= end_dt:
                     collected.append({"source": "뉴시스", "datetime": dt, "title": title, "url": "https://www.newsis.com" + href})
             page += 1
-            t.sleep(0.3)
         return fetch_articles_concurrently(collected, get_newsis_content)
 
     def parse_yonhap():
@@ -131,7 +131,7 @@ if st.button("📥 기사 수집 시작"):
         status_placeholder.info("🔍 [연합뉴스] 목록 수집 중...")
         while True:
             url = f"https://www.yna.co.kr/news/{page}?site=navi_latest_depth01"
-            res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
+            res = httpx.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5.0)
             soup = BeautifulSoup(res.text, "html.parser")
             items = soup.select("ul.list01 > li[data-cid]")
             if not items:
@@ -152,7 +152,6 @@ if st.button("📥 기사 수집 시작"):
                 if start_dt <= dt <= end_dt:
                     collected.append({"source": "연합뉴스", "datetime": dt, "title": title_tag.text.strip(), "url": f"https://www.yna.co.kr/view/{cid}"})
             page += 1
-            t.sleep(0.3)
         return fetch_articles_concurrently(collected, get_yonhap_content)
 
     newsis_articles = parse_newsis()
