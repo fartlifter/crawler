@@ -38,7 +38,9 @@ with col1:
     start_time = st.time_input("시작 시간", value=dtime(0, 0))
 with col2:
     end_date = st.date_input("종료 날짜", value=date.today())
-    end_time = st.time_input("종료 시간", value=datetime.now().time().replace(second=0, microsecond=0))
+    from zoneinfo import ZoneInfo
+now_seoul = datetime.now(ZoneInfo("Asia/Seoul")).time().replace(second=0, microsecond=0)
+end_time = st.time_input("종료 시간", value=now_seoul)
 
 selected_groups = st.multiselect("키워드 그룹 선택", options=list(keyword_groups.keys()), default=['시경', '종혜북'])
 
