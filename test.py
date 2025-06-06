@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-st.set_page_config(page_title="뉴스 키워드 수집기", layout="wide")
+st.set_page_config(page_title="연합·뉴시스 기사 수집기_경찰팀용", layout="wide")
 
 # ✅ 키워드 그룹 정의
 keyword_groups = {
@@ -34,7 +34,7 @@ keyword_groups = {
 }
 
 # ✅ UI 구성
-st.title("📰 뉴스 키워드 수집기")
+st.title("📰 연합·뉴시스 기사 수집기_경찰팀용")
 
 now = datetime.now(ZoneInfo("Asia/Seoul"))
 col1, col2 = st.columns(2)
@@ -94,7 +94,7 @@ def fetch_articles_concurrently(article_list, selector):
 # ✅ 연합뉴스 수집
 def parse_yonhap():
     collected, page = [], 1
-    status_placeholder.info("🔍 [연합뉴스] 목록 수집 중...")
+    status_placeholder.info("🔍 [연합뉴스] 기사 목록 수집 중...")
     while True:
         url = f"https://www.yna.co.kr/news/{page}?site=navi_latest_depth01"
         res = httpx.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5.0)
@@ -125,7 +125,7 @@ def parse_yonhap():
 # ✅ 뉴시스 수집
 def parse_newsis():
     collected, page = [], 1
-    status_placeholder.info("🔍 [뉴시스] 목록 수집 중...")
+    status_placeholder.info("🔍 [뉴시스] 기사 목록 수집 중...")
     while True:
         url = f"https://www.newsis.com/realnews/?cid=realnews&day=today&page={page}"
         res = httpx.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5.0)
@@ -173,7 +173,7 @@ if st.button("📥 기사 수집 시작"):
             st.markdown("---")
 
         # ✅ 복사용 텍스트 박스 (틀만 단독 스타일로 변경)
-        st.subheader("📋 복사용 요약 텍스트")
+        st.subheader("📋 복사용 텍스트")
         text_block = ""
         for art in articles:
             text_block += f"△{art['title']}\n-" + art["content"].replace("\n", " ").strip()[:300] + "\n\n"
