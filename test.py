@@ -1,14 +1,12 @@
 import streamlit as st
+import asyncio
 import httpx
 from bs4 import BeautifulSoup
 from datetime import datetime, date, time as dtime
-from zoneinfo import ZoneInfo
 import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 st.set_page_config(page_title="뉴스 키워드 수집기", layout="wide")
 
-# ✅ 키워드 그룹
 keyword_groups = {
     '시경': ['서울경찰청'],
     '본청': ['경찰청'],
@@ -33,17 +31,14 @@ keyword_groups = {
     ]
 }
 
-# 📌 서울 시간 기준 현재 시각
-seoul_now = datetime.now(ZoneInfo("Asia/Seoul"))
 st.title("📰 뉴스 크롤러 (연합뉴스 + 뉴시스)")
-
 col1, col2 = st.columns(2)
 with col1:
     start_date = st.date_input("시작 날짜", value=date.today())
     start_time = st.time_input("시작 시간", value=dtime(0, 0))
 with col2:
-    end_date = st.date_input("종료 날짜", value=seoul_now.date())
-    end_time = st.time_input("종료 시간", value=dtime(seoul_now.hour, seoul_now.minute))
+    end_date = st.date_input("종료 날짜", value=date.today())
+    end_time = st.time_input("종료 시간", value=datetime.now().time())
 
 selected_groups = st.multiselect("키워드 그룹 선택", options=list(keyword_groups.keys()), default=['시경', '종혜북'])
 
@@ -54,130 +49,137 @@ selected_keywords = [kw for g in selected_groups for kw in keyword_groups[g]]
 progress_placeholder = st.empty()
 status_placeholder = st.empty()
 
+def highlight_keywords(text, keywords):
+    for kw in keywords:
+        text = re.sub(f"({re.escape(kw)})", r"**\1**", text)
+    return text
+
+async def fetch(session, url, parse_func):
+    try:
+        res = await session.get(url)
+        return parse_func(res.text)
+    except:
+        return ""
+
+def parse_newsis_content(html):
+    soup = BeautifulSoup(html, "html.parser")
+    content = soup.find("div", class_="viewer")
+    return content.get_text(separator="\n", strip=True) if content else ""
+
+def parse_yonhap_content(html):
+    soup = BeautifulSoup(html, "html.parser")
+    content = soup.find("div", class_="story-news article")
+    return content.get_text(separator="\n", strip=True) if content else ""
+
+async def fetch_all(articles, parse_func):
+    results = []
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept-Encoding": "gzip, deflate"
+    }
+    limits = httpx.Limits(max_connections=50)
+    async with httpx.AsyncClient(headers=headers, timeout=10.0, limits=limits) as session:
+        tasks = [fetch(session, art['url'], parse_func) for art in articles]
+        for i, task in enumerate(asyncio.as_completed(tasks)):
+            content = await task
+            matched = [kw for kw in selected_keywords if kw in content]
+            if matched:
+                articles[i]['content'] = content
+                articles[i]['matched'] = matched
+                results.append(articles[i])
+            progress_placeholder.progress((i+1)/len(articles), text=f"{i+1}/{len(articles)} 기사 처리 중...")
+    progress_placeholder.empty()
+    return results
+
+def parse_newsis():
+    collected, page = [], 1
+    status_placeholder.info("🔍 [뉴시스] 목록 수집 중...")
+    while True:
+        url = f"https://www.newsis.com/realnews/?cid=realnews&day=today&page={page}"
+        res = httpx.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5.0)
+        soup = BeautifulSoup(res.text, "html.parser")
+        items = soup.select("ul.articleList2 > li")
+        if not items:
+            break
+        for item in items:
+            title_tag = item.select_one("p.tit > a")
+            time_tag = item.select_one("p.time")
+            if not (title_tag and time_tag):
+                continue
+            title = title_tag.get_text(strip=True)
+            href = title_tag.get("href", "")
+            if not href.startswith("/view/"):
+                continue
+            match = re.search(r"\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}", time_tag.text)
+            if not match:
+                continue
+            dt = datetime.strptime(match.group(), "%Y.%m.%d %H:%M:%S")
+            if dt < start_dt:
+                return collected
+            if start_dt <= dt <= end_dt:
+                collected.append({
+                    "source": "뉴시스",
+                    "datetime": dt,
+                    "title": title,
+                    "url": "https://www.newsis.com" + href
+                })
+        page += 1
+    return collected
+
+def parse_yonhap():
+    collected, page = [], 1
+    status_placeholder.info("🔍 [연합뉴스] 목록 수집 중...")
+    while True:
+        url = f"https://www.yna.co.kr/news/{page}?site=navi_latest_depth01"
+        res = httpx.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5.0)
+        soup = BeautifulSoup(res.text, "html.parser")
+        items = soup.select("ul.list01 > li[data-cid]")
+        if not items:
+            break
+        for item in items:
+            cid = item.get("data-cid")
+            title_tag = item.select_one(".title01")
+            time_tag = item.select_one(".txt-time")
+            if not (cid and title_tag and time_tag):
+                continue
+            dt_str = time_tag.get_text(strip=True)
+            try:
+                dt = datetime.strptime(f"{start_dt.year}-{dt_str}", "%Y-%m-%d %H:%M")
+            except:
+                continue
+            if dt < start_dt:
+                return collected
+            if start_dt <= dt <= end_dt:
+                collected.append({
+                    "source": "연합뉴스",
+                    "datetime": dt,
+                    "title": title_tag.text.strip(),
+                    "url": f"https://www.yna.co.kr/view/{cid}"
+                })
+        page += 1
+    return collected
+
 if st.button("📥 기사 수집 시작"):
-    status_placeholder.info("기사 수집을 시작합니다...")
-
-    def highlight_keywords(text, keywords):
-        for kw in keywords:
-            text = re.sub(f"({re.escape(kw)})", r'<span style="background-color: yellow">\1</span>', text)
-        return text
-
-    def get_newsis_content(url):
-        try:
-            with httpx.Client(timeout=5.0) as client:
-                res = client.get(url, headers={"User-Agent": "Mozilla/5.0"})
-                soup = BeautifulSoup(res.text, "html.parser")
-                content = soup.find("div", class_="viewer")
-                return content.get_text(separator="\n", strip=True) if content else ""
-        except:
-            return ""
-
-    def get_yonhap_content(url):
-        try:
-            with httpx.Client(timeout=5.0) as client:
-                res = client.get(url, headers={"User-Agent": "Mozilla/5.0"})
-                soup = BeautifulSoup(res.text, "html.parser")
-                content = soup.find("div", class_="story-news article")
-                return content.get_text(separator="\n", strip=True) if content else ""
-        except:
-            return ""
-
-    def fetch_articles_concurrently(article_list, fetch_func):
-        results = []
-        progress_bar = progress_placeholder.progress(0.0, text="본문 수집 중...")
-        total = len(article_list)
-        with ThreadPoolExecutor(max_workers=30) as executor:
-            future_to_article = {executor.submit(fetch_func, art['url']): art for art in article_list}
-            for i, future in enumerate(as_completed(future_to_article)):
-                art = future_to_article[future]
-                try:
-                    content = future.result()
-                    if any(kw in content for kw in selected_keywords):
-                        art['content'] = content
-                        results.append(art)
-                except:
-                    continue
-                progress_bar.progress((i + 1) / total, text=f"{i+1}/{total} 기사 처리 완료")
-        progress_placeholder.empty()
-        return results
-
-    def parse_newsis():
-        collected, page = [], 1
-        status_placeholder.info("🔍 [뉴시스] 목록 수집 중...")
-        while True:
-            url = f"https://www.newsis.com/realnews/?cid=realnews&day=today&page={page}"
-            res = httpx.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5.0)
-            soup = BeautifulSoup(res.text, "html.parser")
-            items = soup.select("ul.articleList2 > li")
-            if not items:
-                break
-            for item in items:
-                title_tag = item.select_one("p.tit > a")
-                time_tag = item.select_one("p.time")
-                if not (title_tag and time_tag):
-                    continue
-                title = title_tag.get_text(strip=True)
-                href = title_tag.get("href", "")
-                if not href.startswith("/view/"):
-                    continue
-                match = re.search(r"\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}", time_tag.text)
-                if not match:
-                    continue
-                dt = datetime.strptime(match.group(), "%Y.%m.%d %H:%M:%S")
-                if dt < start_dt:
-                    return fetch_articles_concurrently(collected, get_newsis_content)
-                if start_dt <= dt <= end_dt:
-                    collected.append({"source": "뉴시스", "datetime": dt, "title": title, "url": "https://www.newsis.com" + href})
-            page += 1
-        return fetch_articles_concurrently(collected, get_newsis_content)
-
-    def parse_yonhap():
-        collected, page = [], 1
-        status_placeholder.info("🔍 [연합뉴스] 목록 수집 중...")
-        while True:
-            url = f"https://www.yna.co.kr/news/{page}?site=navi_latest_depth01"
-            res = httpx.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5.0)
-            soup = BeautifulSoup(res.text, "html.parser")
-            items = soup.select("ul.list01 > li[data-cid]")
-            if not items:
-                break
-            for item in items:
-                cid = item.get("data-cid")
-                title_tag = item.select_one(".title01")
-                time_tag = item.select_one(".txt-time")
-                if not (cid and title_tag and time_tag):
-                    continue
-                dt_str = time_tag.get_text(strip=True)
-                try:
-                    dt = datetime.strptime(f"{start_dt.year}-{dt_str}", "%Y-%m-%d %H:%M")
-                except:
-                    continue
-                if dt < start_dt:
-                    return fetch_articles_concurrently(collected, get_yonhap_content)
-                if start_dt <= dt <= end_dt:
-                    collected.append({"source": "연합뉴스", "datetime": dt, "title": title_tag.text.strip(), "url": f"https://www.yna.co.kr/view/{cid}"})
-            page += 1
-        return fetch_articles_concurrently(collected, get_yonhap_content)
-
+    status_placeholder.info("📡 기사 수집 중입니다...")
     newsis_articles = parse_newsis()
     yonhap_articles = parse_yonhap()
-    articles = newsis_articles + yonhap_articles
+    all_articles = newsis_articles + yonhap_articles
 
-    status_placeholder.success(f"✅ 총 {len(articles)}건의 기사를 수집했습니다.")
-
-    if articles:
+    if all_articles:
+        results = asyncio.run(fetch_all(all_articles, lambda html: parse_newsis_content(html) if "newsis" in html else parse_yonhap_content(html)))
+        st.success(f"✅ 총 {len(results)}건의 기사를 수집했습니다.")
+        
         st.subheader("📰 기사 내용")
-        for art in articles:
-            matched_kw = [kw for kw in selected_keywords if kw in art["content"]]
+        for art in results:
             st.markdown(f"**[{art['title']}]({art['url']})**")
-            st.markdown(f"{art['datetime'].strftime('%Y-%m-%d %H:%M')} | 필터링 키워드: {', '.join(matched_kw)}")
-            st.markdown(highlight_keywords(art['content'], matched_kw).replace("\n", "<br>"), unsafe_allow_html=True)
+            st.markdown(f"{art['datetime'].strftime('%Y-%m-%d %H:%M')} | 필터링 키워드: {', '.join(art['matched'])}")
+            st.markdown(highlight_keywords(art['content'], art['matched']).replace("\n", "\n\n"))
             st.markdown("---")
-
+        
         st.subheader("📋 복사용 요약 텍스트")
         text_block = ""
-        for art in articles:
-            text_block += f"△{art['title']}\n-" + art["content"].replace("\n", " ").strip()[:300] + "\n\n"
-
-        st.text_area("아래 내용 복사", value=text_block, height=300)
-        st.download_button("📄 텍스트 복사/다운로드", text_block, file_name="기사요약.txt", mime="text/plain")
+        for art in results:
+            text_block += f"△{art['title']}\n-{art['content'].replace(chr(10), ' ')[:300]}\n\n"
+        st.text_area("복사하세요", text_block, height=300)
+    else:
+        st.warning("📭 수집된 기사가 없습니다.")
