@@ -3,6 +3,7 @@ import asyncio
 import httpx
 from bs4 import BeautifulSoup
 from datetime import datetime, date, time as dtime
+from zoneinfo import ZoneInfo
 import re
 
 st.set_page_config(page_title="뉴스 키워드 수집기", layout="wide")
@@ -33,12 +34,15 @@ keyword_groups = {
 
 st.title("📰 뉴스 크롤러 (연합뉴스 + 뉴시스)")
 col1, col2 = st.columns(2)
+
 with col1:
     start_date = st.date_input("시작 날짜", value=date.today())
     start_time = st.time_input("시작 시간", value=dtime(0, 0))
+
 with col2:
-    end_date = st.date_input("종료 날짜", value=date.today())
-    end_time = st.time_input("종료 시간", value=datetime.now().time())
+    seoul_now = datetime.now(ZoneInfo("Asia/Seoul"))
+    end_date = st.date_input("종료 날짜", value=seoul_now.date())
+    end_time = st.time_input("종료 시간", value=seoul_now.time())
 
 selected_groups = st.multiselect("키워드 그룹 선택", options=list(keyword_groups.keys()), default=['시경', '종혜북'])
 
