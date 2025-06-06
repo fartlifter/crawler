@@ -5,6 +5,7 @@ from bs4 import BeautifulSoup
 from datetime import datetime, date, time as dtime
 import re
 from zoneinfo import ZoneInfo
+import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="뉴스 키워드 수집기", layout="wide")
 
@@ -45,13 +46,14 @@ keyword_pattern = re.compile("|".join(re.escape(k) for k in selected_keywords))
 
 progress_placeholder = st.empty()
 status_placeholder = st.empty()
+chart_placeholder = st.empty()
 
 def highlight_keywords(text, keywords):
     for kw in keywords:
         text = re.sub(f"({re.escape(kw)})", r"<mark>\1</mark>", text)
     return text
 
-# ✅ 본문 비동기 수집
+# ✅ 본문 수집 + 실시간 막대그래프 표시
 async def fetch_content_async(url, selector):
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
@@ -64,8 +66,11 @@ async def fetch_content_async(url, selector):
 
 async def fetch_articles_async(article_list, selector):
     results = []
-    progress_bar = progress_placeholder.progress(0.0, text="본문 수집 중...")
     total = len(article_list)
+    collected_count = 0
+    skipped_count = 0
+
+    progress_bar = progress_placeholder.progress(0.0, text="본문 수집 중...")
 
     tasks = []
     for art in article_list:
@@ -78,9 +83,22 @@ async def fetch_articles_async(article_list, selector):
         if isinstance(content, str) and keyword_pattern.search(content):
             art['content'] = content
             results.append(art)
+            collected_count += 1
+        else:
+            skipped_count += 1
+
+        # ✅ 진행률 표시
         progress_bar.progress((i + 1) / total, text=f"{i+1}/{total} 기사 처리 완료")
 
+        # ✅ 실시간 막대그래프 표시
+        fig, ax = plt.subplots()
+        ax.bar(["성공", "누락"], [collected_count, skipped_count], color=["#4CAF50", "#F44336"])
+        ax.set_ylim(0, total)
+        ax.set_title("실시간 기사 수집 현황")
+        chart_placeholder.pyplot(fig)
+
     progress_placeholder.empty()
+    chart_placeholder.empty()
     status_placeholder.success("✅ 본문 수집 완료")
     return results
 
@@ -113,13 +131,13 @@ async def fetch_newsis_page(page):
         return []
 
 async def parse_newsis_async():
-    pages = range(1, 6)  # 최대 5페이지까지만 병렬 수집 (필요시 조절)
+    pages = range(1, 6)
     status_placeholder.info("🔍 [뉴시스] 기사 목록 수집 중...")
     all_results = await asyncio.gather(*(fetch_newsis_page(p) for p in pages))
     collected = [item for sublist in all_results for item in sublist]
     return await fetch_articles_async(collected, "viewer")
 
-# ✅ 연합뉴스 수집 (동기 방식 유지)
+# ✅ 연합뉴스 수집
 def parse_yonhap():
     collected, page = [], 1
     status_placeholder.info("🔍 [연합뉴스] 목록 수집 중...")
