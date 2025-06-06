@@ -2,11 +2,13 @@ import streamlit as st
 import httpx
 from bs4 import BeautifulSoup
 from datetime import datetime, date, time as dtime
+from zoneinfo import ZoneInfo
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 st.set_page_config(page_title="뉴스 키워드 수집기", layout="wide")
 
+# ✅ 키워드 그룹
 keyword_groups = {
     '시경': ['서울경찰청'],
     '본청': ['경찰청'],
@@ -31,14 +33,17 @@ keyword_groups = {
     ]
 }
 
+# 📌 서울 시간 기준 현재 시각
+seoul_now = datetime.now(ZoneInfo("Asia/Seoul"))
 st.title("📰 뉴스 크롤러 (연합뉴스 + 뉴시스)")
+
 col1, col2 = st.columns(2)
 with col1:
     start_date = st.date_input("시작 날짜", value=date.today())
-    start_time = st.time_input("시작 시간", value=dtime(18, 0))
+    start_time = st.time_input("시작 시간", value=dtime(0, 0))
 with col2:
-    end_date = st.date_input("종료 날짜", value=date.today())
-    end_time = st.time_input("종료 시간", value=dtime(22, 0))
+    end_date = st.date_input("종료 날짜", value=seoul_now.date())
+    end_time = st.time_input("종료 시간", value=dtime(seoul_now.hour, seoul_now.minute))
 
 selected_groups = st.multiselect("키워드 그룹 선택", options=list(keyword_groups.keys()), default=['시경', '종혜북'])
 
@@ -54,7 +59,7 @@ if st.button("📥 기사 수집 시작"):
 
     def highlight_keywords(text, keywords):
         for kw in keywords:
-            text = re.sub(f"({re.escape(kw)})", r"**\1**", text)
+            text = re.sub(f"({re.escape(kw)})", r'<span style="background-color: yellow">\1</span>', text)
         return text
 
     def get_newsis_content(url):
@@ -166,11 +171,13 @@ if st.button("📥 기사 수집 시작"):
             matched_kw = [kw for kw in selected_keywords if kw in art["content"]]
             st.markdown(f"**[{art['title']}]({art['url']})**")
             st.markdown(f"{art['datetime'].strftime('%Y-%m-%d %H:%M')} | 필터링 키워드: {', '.join(matched_kw)}")
-            st.markdown(highlight_keywords(art['content'], matched_kw).replace("\n", "\n\n"))
+            st.markdown(highlight_keywords(art['content'], matched_kw).replace("\n", "<br>"), unsafe_allow_html=True)
             st.markdown("---")
 
         st.subheader("📋 복사용 요약 텍스트")
         text_block = ""
         for art in articles:
             text_block += f"△{art['title']}\n-" + art["content"].replace("\n", " ").strip()[:300] + "\n\n"
-        st.text_area("복사하세요", text_block, height=300)
+
+        st.text_area("아래 내용 복사", value=text_block, height=300)
+        st.download_button("📄 텍스트 복사/다운로드", text_block, file_name="기사요약.txt", mime="text/plain")
