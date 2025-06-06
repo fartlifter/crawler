@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-st.set_page_config(page_title="연합·뉴시스 기사 수집기_경찰팀용", layout="wide")
+st.set_page_config(page_title="통신기사 수집기_경찰팀", layout="wide")
 
 # ✅ 키워드 그룹 정의
 keyword_groups = {
@@ -34,7 +34,7 @@ keyword_groups = {
 }
 
 # ✅ UI 구성
-st.title("📰 연합·뉴시스 기사 수집기_경찰팀용")
+st.title("📰 통신기사 수집기_경찰팀")
 
 now = datetime.now(ZoneInfo("Asia/Seoul"))
 col1, col2 = st.columns(2)
