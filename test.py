@@ -171,5 +171,5 @@ if st.button("📥 기사 수집 시작"):
         for art in articles:
             text_block += f"△{art['title']}\n-" + art["content"].replace("\n", " ").strip() + "\n\n"
 
-        st.text_area("👇 전체 복사하려면 여기를 클릭하세요", value=text_block.strip(), height=500)
-        st.caption("※ Ctrl+A → Ctrl+C로 복사하세요.")
+            st.code(text_block.strip(), language="markdown")
+            st.caption("위 내용을 복사해서 사용하세요.")
