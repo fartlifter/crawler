@@ -1,5 +1,6 @@
 streamlit
 httpx
+matplotlib
 pytz
 pandas
 openpyxl
