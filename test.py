@@ -172,17 +172,11 @@ if st.button("📥 기사 수집 시작"):
             st.markdown(highlight_keywords(art['content'], matched_kw).replace("\n", "<br>"), unsafe_allow_html=True)
             st.markdown("---")
 
-        # 📋 복사용 텍스트 생성
+        # ✅ 복사용 텍스트 박스 (틀만 단독 스타일로 변경)
         st.subheader("📋 복사용 요약 텍스트")
         text_block = ""
         for art in articles:
             text_block += f"△{art['title']}\n-" + art["content"].replace("\n", " ").strip()[:300] + "\n\n"
 
-        st.text_area("복사할 내용", text_block, height=300, key="copy_text")
-
-        # 클립보드 복사 JS 버튼
-        st.markdown(f"""
-        <textarea id="copy-target" style="height:0; opacity:0">{text_block}</textarea>
-        <button onclick="navigator.clipboard.writeText(document.getElementById('copy-target').value).then(()=>alert('클립보드에 복사되었습니다!'))"
-            style="padding:10px; font-size:16px;">📋 클립보드에 복사</button>
-        """, unsafe_allow_html=True)
+        st.code(text_block.strip(), language="markdown")
+        st.caption("위 내용을 복사해서 사용하세요.")
