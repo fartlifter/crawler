@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 from datetime import datetime, date, time as dtime
 from zoneinfo import ZoneInfo
 import re
-import asyncio
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 st.set_page_config(page_title="뉴스 키워드 수집기", layout="wide")
 
@@ -34,7 +34,7 @@ keyword_groups = {
 }
 
 # ✅ UI 구성
-st.title("\U0001F4F0 뉴스 키워드 수집기")
+st.title("📰 뉴스 키워드 수집기")
 
 now = datetime.now(ZoneInfo("Asia/Seoul"))
 col1, col2 = st.columns(2)
@@ -54,49 +54,47 @@ end_dt = datetime.combine(end_date, end_time).replace(tzinfo=ZoneInfo("Asia/Seou
 progress_placeholder = st.empty()
 status_placeholder = st.empty()
 
-# ✅ 본문 키워드 강조
+# ✅ 본문 키워드 강조 (색상 하이라이트)
 def highlight_keywords(text, keywords):
     for kw in keywords:
-        text = re.sub(f"({re.escape(kw)})", r"**\\1**", text)
+        text = re.sub(f"({re.escape(kw)})", r'<mark style="background-color: #fffb91">\1</mark>', text)
     return text
 
-# ✅ 비동기 본문 수집 함수
-async def get_content_async(client, url, selector):
+# ✅ 본문 파서
+def get_content(url, selector):
     try:
-        res = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
-        soup = BeautifulSoup(res.text, "html.parser")
-        content = soup.select_one(selector)
-        return content.get_text(separator="\n", strip=True) if content else ""
+        with httpx.Client(timeout=5.0) as client:
+            res = client.get(url, headers={"User-Agent": "Mozilla/5.0"})
+            soup = BeautifulSoup(res.text, "html.parser")
+            content = soup.select_one(selector)
+            return content.get_text(separator="\n", strip=True) if content else ""
     except:
         return ""
 
-# ✅ 비동기 기사 병렬 수집
+# ✅ 기사 병렬 수집
 def fetch_articles_concurrently(article_list, selector):
+    results = []
     progress_bar = progress_placeholder.progress(0.0, text="본문 수집 중...")
     total = len(article_list)
-
-    async def collect():
-        results = []
-        timeout = httpx.Timeout(10.0)
-        limits = httpx.Limits(max_keepalive_connections=50, max_connections=100)
-        async with httpx.AsyncClient(timeout=timeout, limits=limits) as client:
-            tasks = [get_content_async(client, art['url'], selector) for art in article_list]
-            contents = await asyncio.gather(*tasks)
-            for i, content in enumerate(contents):
-                progress_bar.progress((i + 1) / total, text=f"{i+1}/{total} 기사 처리 완료")
+    with ThreadPoolExecutor(max_workers=30) as executor:
+        futures = {executor.submit(get_content, art['url'], selector): art for art in article_list}
+        for i, future in enumerate(as_completed(futures)):
+            art = futures[future]
+            try:
+                content = future.result()
                 if any(kw in content for kw in selected_keywords):
-                    article_list[i]['content'] = content
-                    results.append(article_list[i])
-        return results
-
-    result = asyncio.run(collect())
+                    art['content'] = content
+                    results.append(art)
+            except:
+                continue
+            progress_bar.progress((i + 1) / total, text=f"{i+1}/{total} 기사 처리 완료")
     progress_placeholder.empty()
-    return result
+    return results
 
 # ✅ 연합뉴스 수집
 def parse_yonhap():
     collected, page = [], 1
-    status_placeholder.info("\U0001F50D [연합뉴스] 목록 수집 중...")
+    status_placeholder.info("🔍 [연합뉴스] 목록 수집 중...")
     while True:
         url = f"https://www.yna.co.kr/news/{page}?site=navi_latest_depth01"
         res = httpx.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5.0)
@@ -127,7 +125,7 @@ def parse_yonhap():
 # ✅ 뉴시스 수집
 def parse_newsis():
     collected, page = [], 1
-    status_placeholder.info("\U0001F50D [뉴시스] 목록 수집 중...")
+    status_placeholder.info("🔍 [뉴시스] 목록 수집 중...")
     while True:
         url = f"https://www.newsis.com/realnews/?cid=realnews&day=today&page={page}"
         res = httpx.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5.0)
@@ -157,7 +155,7 @@ def parse_newsis():
     return fetch_articles_concurrently(collected, "div.viewer")
 
 # ✅ 수집 버튼 클릭 시 실행
-if st.button("\U0001F4E5 기사 수집 시작"):
+if st.button("📥 기사 수집 시작"):
     status_placeholder.info("기사 수집을 시작합니다...")
     newsis_articles = parse_newsis()
     yonhap_articles = parse_yonhap()
@@ -166,24 +164,25 @@ if st.button("\U0001F4E5 기사 수집 시작"):
     status_placeholder.success(f"✅ 총 {len(articles)}건의 기사를 수집했습니다.")
 
     if articles:
-        st.subheader("\U0001F4F0 기사 내용")
+        st.subheader("📰 기사 내용")
         for art in articles:
             matched_kw = [kw for kw in selected_keywords if kw in art["content"]]
             st.markdown(f"**[{art['title']}]({art['url']})**")
             st.markdown(f"{art['datetime'].strftime('%Y-%m-%d %H:%M')} | 필터링 키워드: {', '.join(matched_kw)}")
-            st.markdown(highlight_keywords(art['content'], matched_kw).replace("\n", "\n\n"))
+            st.markdown(highlight_keywords(art['content'], matched_kw).replace("\n", "<br>"), unsafe_allow_html=True)
             st.markdown("---")
 
         # 📋 복사용 텍스트 생성
-        st.subheader("\ud83d\udccb 복사용 요약 텍스트")
+        st.subheader("📋 복사용 요약 텍스트")
         text_block = ""
         for art in articles:
-            text_block += f"\u25b3{art['title']}\n-" + art["content"].replace("\n", " ").strip()[:300] + "\n\n"
+            text_block += f"△{art['title']}\n-" + art["content"].replace("\n", " ").strip()[:300] + "\n\n"
 
         st.text_area("복사할 내용", text_block, height=300, key="copy_text")
 
+        # 클립보드 복사 JS 버튼
         st.markdown(f"""
         <textarea id="copy-target" style="height:0; opacity:0">{text_block}</textarea>
         <button onclick="navigator.clipboard.writeText(document.getElementById('copy-target').value).then(()=>alert('클립보드에 복사되었습니다!'))"
-            style="padding:10px; font-size:16px;">\ud83d\udccb 클립보드에 복사</button>
+            style="padding:10px; font-size:16px;">📋 클립보드에 복사</button>
         """, unsafe_allow_html=True)
