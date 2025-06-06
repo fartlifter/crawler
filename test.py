@@ -165,10 +165,12 @@ if st.button("📥 기사 수집 시작"):
             st.markdown(highlight_keywords(art['content'], matched_kw).replace("\n", "<br>"), unsafe_allow_html=True)
             st.markdown("---")
 
-        # ✅ 복사용 텍스트 박스 개선 (길이 제한 없이)
+        # ✅ 복사용 텍스트 박스 개선 (한 번만 출력)
         st.subheader("📋 복사용 텍스트")
         text_block = ""
-        for row in all_articles:
+        for art in articles:
             text_block += f"△{art['title']}\n-" + art["content"].replace("\n", " ").strip() + "\n\n"
+        
         st.code(text_block.strip(), language="markdown")
         st.caption("위 내용을 복사해서 사용하세요.")
+
