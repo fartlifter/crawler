@@ -170,6 +170,5 @@ if st.button("📥 기사 수집 시작"):
         text_block = ""
         for art in articles:
             text_block += f"△{art['title']}\n-" + art["content"].replace("\n", " ").strip() + "\n\n"
-
-        st.text_area("copy_text_area", text_block.strip(), height=400, label_visibility="collapsed")
+        st.code(text_block.strip(), language="markdown")
         st.caption("위 내용을 복사해서 사용하세요.")
