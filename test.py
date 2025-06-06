@@ -168,7 +168,7 @@ if st.button("📥 기사 수집 시작"):
         # ✅ 복사용 텍스트 출력
         st.subheader("📋 복사용 텍스트")
         text_block = ""
-        for art in articles:
+        for row in articles:
             text_block += f"△{art['title']}\n-" + art["content"].replace("\n", " ").strip() + "\n\n"
         st.code(text_block.strip(), language="markdown")
         st.caption("위 내용을 복사해서 사용하세요.")
