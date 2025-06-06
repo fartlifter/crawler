@@ -33,7 +33,6 @@ keyword_groups = {
     ]
 }
 
-# ✅ UI 구성
 st.title("📰 통신기사 수집기_경찰팀")
 
 now = datetime.now(ZoneInfo("Asia/Seoul"))
@@ -54,13 +53,11 @@ end_dt = datetime.combine(end_date, end_time).replace(tzinfo=ZoneInfo("Asia/Seou
 progress_placeholder = st.empty()
 status_placeholder = st.empty()
 
-# ✅ 본문 키워드 강조 (색상 하이라이트)
 def highlight_keywords(text, keywords):
     for kw in keywords:
         text = re.sub(f"({re.escape(kw)})", r'<mark style="background-color: #fffb91">\1</mark>', text)
     return text
 
-# ✅ 본문 파서
 def get_content(url, selector):
     try:
         with httpx.Client(timeout=5.0) as client:
@@ -71,7 +68,6 @@ def get_content(url, selector):
     except:
         return ""
 
-# ✅ 기사 병렬 수집
 def fetch_articles_concurrently(article_list, selector):
     results = []
     progress_bar = progress_placeholder.progress(0.0, text="본문 수집 중...")
@@ -91,7 +87,6 @@ def fetch_articles_concurrently(article_list, selector):
     progress_placeholder.empty()
     return results
 
-# ✅ 연합뉴스 수집
 def parse_yonhap():
     collected, page = [], 1
     status_placeholder.info("🔍 [연합뉴스] 기사 목록 수집 중...")
@@ -122,7 +117,6 @@ def parse_yonhap():
         page += 1
     return fetch_articles_concurrently(collected, "div.story-news.article")
 
-# ✅ 뉴시스 수집
 def parse_newsis():
     collected, page = [], 1
     status_placeholder.info("🔍 [뉴시스] 기사 목록 수집 중...")
@@ -154,7 +148,6 @@ def parse_newsis():
         page += 1
     return fetch_articles_concurrently(collected, "div.viewer")
 
-# ✅ 수집 버튼 클릭 시 실행
 if st.button("📥 기사 수집 시작"):
     status_placeholder.info("기사 수집을 시작합니다...")
     newsis_articles = parse_newsis()
@@ -172,11 +165,11 @@ if st.button("📥 기사 수집 시작"):
             st.markdown(highlight_keywords(art['content'], matched_kw).replace("\n", "<br>"), unsafe_allow_html=True)
             st.markdown("---")
 
-        # ✅ 복사용 텍스트 박스 (틀만 단독 스타일로 변경)
+        # ✅ 복사용 텍스트 박스 개선 (길이 제한 없이)
         st.subheader("📋 복사용 텍스트")
         text_block = ""
         for art in articles:
             text_block += f"△{art['title']}\n-" + art["content"].replace("\n", " ").strip()[:300] + "\n\n"
 
-        st.code(text_block.strip(), language="markdown")
-        st.caption("위 내용을 복사해서 사용하세요.")
+        st.text_area("👇 전체 복사하려면 여기를 클릭하세요", value=text_block.strip(), height=500)
+        st.caption("※ Ctrl+A → Ctrl+C로 복사하세요.")
