@@ -8,32 +8,25 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 st.set_page_config(page_title="통신기사 수집기_경찰팀", layout="wide")
 
-# ✅ 키워드 그룹 정의
+# === 키워드 카테고리 ===
 keyword_groups = {
     '시경': ['서울경찰청'],
     '본청': ['경찰청'],
-    '종혜북': [
-        '종로', '종암', '성북', '고려대', '참여연대', '혜화', '동대문', '중랑',
+    '종혜북': ['종로', '종암', '성북', '고려대', '참여연대', '혜화', '동대문', '중랑',
         '성균관대', '한국외대', '서울시립대', '경희대', '경실련', '서울대병원',
-        '노원', '강북', '도봉', '북부지법', '북부지검', '상계백병원', '국가인권위원회'
-    ],
-    '마포중부': [
-        '마포', '서대문', '서부', '은평', '서부지검', '서부지법', '연세대',
-        '신촌세브란스병원', '군인권센터', '중부', '남대문', '용산', '동국대',
-        '숙명여대', '순천향대병원'
-    ],
-    '영등포관악': [
-        '영등포', '양천', '구로', '강서', '남부지검', '남부지법', '여의도성모병원',
-        '고대구로병원', '관악', '금천', '동작', '방배', '서울대', '중앙대', '숭실대', '보라매병원'
-    ],
-    '강남광진': [
-        '강남', '서초', '수서', '송파', '강동', '삼성의료원', '현대아산병원',
-        '강남세브란스병원', '광진', '성동', '동부지검', '동부지법', '한양대',
-        '건국대', '세종대'
-    ]
+        '노원', '강북', '도봉', '북부지법', '북부지검', '상계백병원', '국가인권위원회'],
+    '마포중부': ['마포', '서대문', '서부', '은평', '서부지검', '서부지법', '연세대', '반부패범죄수사대', '공공범죄수사대',
+        '금융범죄수사대', '마약범죄수사대', '신촌세브란스병원', '군인권센터', '중부', '중구', 
+        '남대문', '용산', '동국대', '숙명여대', '순천향대병원'],
+    '남부지검법': ['남부지검', '남부지법'],
+    '영등포관악': ['영등포', '양천', '구로', '강서', '여의도성모병원',
+        '고대구로병원', '관악', '금천', '동작', '방배', '서울대', '중앙대', '숭실대', '보라매병원'],
+    '강남광진': ['강남', '서초', '수서', '송파', '강동', '삼성의료원', '현대아산병원',
+        '강남세브란스병원', '광진', '성동', '동부지검', '동부지법', '한양대', '건국대', '세종대']
 }
 
 st.title("📰 통신기사 수집기_경찰팀")
+st.markdown("✅ 통신기사를 수집하고 선택한 키워드가 본문에 포함된 기사만 필터링합니다. 선택한 기사만 최하단 복사용 박스에 표시됩니다. 업데이트:250622")
 
 now = datetime.now(ZoneInfo("Asia/Seoul"))
 col1, col2 = st.columns(2)
@@ -52,6 +45,10 @@ end_dt = datetime.combine(end_date, end_time).replace(tzinfo=ZoneInfo("Asia/Seou
 
 progress_placeholder = st.empty()
 status_placeholder = st.empty()
+
+# ✅ 세션 상태 초기화
+if "articles" not in st.session_state:
+    st.session_state.articles = []
 
 def highlight_keywords(text, keywords):
     for kw in keywords:
@@ -148,27 +145,38 @@ def parse_newsis():
         page += 1
     return fetch_articles_concurrently(collected, "div.viewer")
 
+# ✅ 기사 수집 버튼
 if st.button("📥 기사 수집 시작"):
     status_placeholder.info("기사 수집을 시작합니다...")
     newsis_articles = parse_newsis()
     yonhap_articles = parse_yonhap()
-    articles = newsis_articles + yonhap_articles
+    st.session_state.articles = newsis_articles + yonhap_articles
+    status_placeholder.success(f"✅ 총 {len(st.session_state.articles)}건의 기사를 수집했습니다.")
 
-    status_placeholder.success(f"✅ 총 {len(articles)}건의 기사를 수집했습니다.")
-
-    if articles:
-        st.subheader("📰 기사 내용")
-        for art in articles:
-            matched_kw = [kw for kw in selected_keywords if kw in art["content"]]
-            st.markdown(f"**[{art['title']}]({art['url']})**")
+# ✅ 기사 표시 및 선택
+selected_articles = []
+articles = st.session_state.articles
+if articles:
+    st.subheader("📰 기사 내용")
+    for i, art in enumerate(articles):
+        matched_kw = [kw for kw in selected_keywords if kw in art["content"]]
+        with st.expander(art["title"], expanded=False):
+            is_selected = st.checkbox("이 기사 선택", key=f"select_{i}")
+            st.markdown(f"[원문 보기]({art['url']})")
             st.markdown(f"{art['datetime'].strftime('%Y-%m-%d %H:%M')} | 필터링 키워드: {', '.join(matched_kw)}")
             st.markdown(highlight_keywords(art['content'], matched_kw).replace("\n", "<br>"), unsafe_allow_html=True)
-            st.markdown("---")
+            if is_selected:
+                selected_articles.append(art)
 
-        # ✅ 복사용 텍스트 출력
-        st.subheader("📋 복사용 텍스트")
-        text_block = ""
-        for row in articles:
-            text_block += f"△{row['title']}\n-" + row["content"].replace("\n", " ").strip() + "\n\n"
-        st.code(text_block.strip(), language="markdown")
-        st.caption("위 내용을 복사해서 사용하세요.")
+# ✅ 복사용 텍스트 박스
+if selected_articles:
+    st.subheader("📋 복사용 텍스트 (선택된 기사만)")
+    text_block = ""
+    for row in selected_articles:
+        text_block += f"△{row['title']}\n- {row['content'].strip()}\n\n"
+    st.code(text_block.strip(), language="markdown")
+    st.caption("✅ 복사 버튼을 눌러 선택한 기사 내용을 복사하세요.")
+else:
+    if articles:
+        st.subheader("📋 복사용 텍스트 (선택된 기사 없음)")
+        st.info("체크박스로 기사 선택 시 이 영역에 텍스트가 표시됩니다.")
