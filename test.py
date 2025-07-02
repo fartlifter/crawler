@@ -26,7 +26,7 @@ keyword_groups = {
 }
 
 st.title("📰 통신기사 수집기_경찰팀")
-st.markdown("✅ 통신기사를 수집하고 선택한 키워드가 본문에 포함된 기사만 필터링합니다. 선택한 기사만 최하단 복사용 박스에 표시됩니다. 업데이트:250622")
+st.markdown("✅ 통신기사를 수집하고 선택한 키워드가 본문에 포함된 기사만 필터링합니다. 선택한 기사만 최하단 복사용 박스에 표시됩니다. 업데이트:250703")
 
 now = datetime.now(ZoneInfo("Asia/Seoul"))
 col1, col2 = st.columns(2)
@@ -173,7 +173,7 @@ if selected_articles:
     st.subheader("📋 복사용 텍스트 (선택된 기사만)")
     text_block = ""
     for row in selected_articles:
-        text_block += f"△{row['title']}\n- {row['content'].strip()}\n\n"
+        text_block += f"△{row['title']}\n-{row['content'].strip()}\n\n"
     st.code(text_block.strip(), language="markdown")
     st.caption("✅ 복사 버튼을 눌러 선택한 기사 내용을 복사하세요.")
 else:
