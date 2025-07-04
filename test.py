@@ -171,7 +171,7 @@ if articles:
 # ✅ 복사용 텍스트 박스
 if selected_articles:
     st.subheader("📋 복사용 텍스트 (선택된 기사만)")
-    text_block = ""
+    text_block = "【사회면】\n"
     for row in selected_articles:
         text_block += f"△{row['title']}\n-{row['content'].strip()}\n\n"
     st.code(text_block.strip(), language="markdown")
